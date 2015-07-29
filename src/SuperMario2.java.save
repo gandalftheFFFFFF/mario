@@ -1,0 +1,645 @@
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.Stack;
+
+
+public class SuperMario {
+	
+	/*
+	 * Group BJ
+	 * Niels Schrøder Pedersen & Nicklas Frederiksen
+	 * 
+	 * Assignment: Super Vector Mario!
+	 */
+	
+	public static void main(String[] args) {
+		
+		// Import the race track through StdIn of the format: r \n c \n row1 \n row2 ...
+		String[][] track = importTrack();
+		
+		printTrack(track);
+		
+		int[] conditions = getTrackConditions(track);
+		
+		// Build a directed graph whose nodes resprsent all legal posision-velocity pairs, 
+		// and whose edges represent legal moves. Add a source vertex s, and an arc 
+		// s->((i,j),(0,0)) for every point (i,j) in the starting region. Add a target 
+		// vertex t, and an arc ((i,j),(u,v))->t for every point (i,j) in the finish region 
+		// and every legal velocity (u,v). 
+		
+		/*
+		 *  Each node in the graph is represented by an int array og length 4:
+		 *  
+		 *  Node(position_x, position_y, momentum_x, momentum_y)
+		 *  
+		 *  The momentum decides the available nodes from the current node. E.g. if Mario travels from
+		 *  (x,y,a,b), without any changes, the next node will be (x+a, y+b, a, b). All other available
+		 *  nodes are determined by the acceleration changes to values a and b (+/-1). The  available
+		 *  changes to a and b are:
+		 *  ( 0, +1) (+1,  0) (+1, +1)
+		 *  ( 0, -1) ( 0, -1) (-1, -1)
+		 *  (+1, -1) ( 0,  0)
+		 */
+		
+		ArrayList<HashMap<Node, LinkedList<Node>>> graphContainer = new ArrayList<HashMap<Node,LinkedList<Node>>>();
+		
+		int minimumPath = Integer.MAX_VALUE;
+		
+		for (int i = 0; i < track.length; i++) {
+			for (int j = 0; j < track[i].length; j++) {
+				if (track[i][j].equals("S")) {
+					// Start building directed graph for this start field and do BFS after building it
+//					System.out.println("Starting field at: [" + j + ", " + i + "]");
+					HashMap<Node, LinkedList<Node>> g = graphConstructor(track, j, i);
+					graphContainer.add(g);
+					
+					System.out.println(g.toString());
+					
+					Node start = new Node(j, i, 0, 0);
+					
+					System.out.println("Start: " + start.toString());
+					
+					int localMinimumPath = BFS(g, start, track);
+					if (localMinimumPath < minimumPath) {
+						minimumPath = localMinimumPath;	
+					}
+				}
+			}
+		}
+		
+		// Perform BFS on each graph and get the smallest of the two
+		System.out.println(minimumPath);
+	}
+	
+	public static int BFS(HashMap<Node, LinkedList<Node>> graph, Node start, String[][] track) {
+		
+		/*
+		 * This methods searches for the shortest path from start to finish in any graph
+		 */
+		
+		Queue<Node> q = new LinkedList<Node>();
+		
+		HashMap<Node, Boolean> visited = new HashMap<Node, Boolean>();
+		HashMap<Node, Node> path = new HashMap<Node, Node>();
+		
+		q.add(start);
+		Node current = null;
+		while (!q.isEmpty()) {
+			current = q.poll();
+			visited.put(current, true);
+			System.out.println(graph.toString());
+			System.out.println("Current: " + current.toString());
+			System.out.println("Contains? " + graph.containsKey(current));
+			LinkedList<Node> children = graph.get(current);
+			
+			for (Node child : children) {
+				path.put(child, current);
+				
+				if (isInGoal(child, track)) {
+					Node backTrackNode = child;
+					Stack<Node> s = new Stack<Node>();
+					s.push(child);
+					while (!backTrackNode.equals(start)) {
+						backTrackNode = path.get(backTrackNode);
+						s.push(backTrackNode);
+					}
+					return s.size();
+				}
+				
+			}
+			
+		}
+		
+		return 0;
+		
+	}
+	
+	public static HashMap<Node, LinkedList<Node>> graphConstructor(String[][] track, int x, int y) {
+		
+		/*
+		 * This method creates a directed graph from the starting point x, y, using the helper method "getNextMoves".
+		 */
+		
+		HashMap<Node, LinkedList<Node>> graph = new HashMap<Node, LinkedList<Node>>();
+		HashMap<Node, Boolean> visited = new HashMap<Node, Boolean>();
+		
+		// Starting node: x, y with no mementum
+		Node start = new Node(x, y, 0, 0);
+		
+		Queue<Node> q = new LinkedList<Node>(); 
+		
+		q.add(start);
+		// Keep "growing a path" / adding the path to the queue unless it ends up in a finish, or out of bounds
+		while (!q.isEmpty()) {
+			Node current = q.poll();
+			LinkedList<Node> nextMoves = getNextMoves(current, track);
+			visited.put(current, true);
+			if (!isInGoal(current, track)) {
+//				System.out.println("Visited " + current + " and expanded " + nextMoves.toString());
+				for (Node move : nextMoves) {
+					if (!current.equals(move) && isLegalMove(move, track) && visited.get(move) == null) {
+						// Add move to queue IF it's not equal to the parent AND it's a legal move AND its not been visited before
+						q.add(move);
+						
+						// Map or update mapping from current --> move
+						if (!graph.containsKey(current)) {
+							LinkedList<Node> l = new LinkedList<Node>();
+							l.add(move);
+							graph.put(current, l);
+						} else {
+							LinkedList<Node> l = graph.get(current);
+							l.add(move);
+							graph.put(current, l);
+						}
+					}
+				}
+			}
+//			System.out.println("Queue: " + q.toString());
+		}
+		
+		return graph;
+	}
+	
+	public static boolean isInGoal(Node move, String[][] track) {
+		
+		/*
+		 * This method evaluates whether or not a move terminates on a goal node
+		 */
+		
+		if (track[move.getY()][move.getX()].equals("F")) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public static boolean isLegalMove(Node move, String[][] track) {
+		
+		/*
+		 * Evaluates the position of a given move. The move is deemed illegal if it meets any of the following conditions:
+		 * 1. The x-coordinate is less than zero - the move is out bounds
+		 * 2. The y-coordinate is less than zero - the move is out of bounds
+		 * 3. The x-coordinate is greater than the horizontal length of the track - the move is out of bounds
+		 * 4. The y-coordinate is greater than the vertical length of the track - the move is out of bounds
+		 * 5. The move has landed on a tile that contains the letter "O" - the Mario has hit an obstacle and died!
+		 */
+		
+		if (move.getX() < 0 || move.getY() < 0 || move.getX() >= track[0].length || move.getY() >= track.length || track[move.getY()][move.getX()].equals("O")) {
+			return false;
+		} else {
+			return true;
+		}
+	}
+	
+	public static LinkedList<Node> getNextMoves(Node start, String[][] track) {
+		
+		/*
+		 * This method takes any node and returns the next possible moves - including a backwards move. This will be removed when during mapping the directions.
+		 */
+		
+		LinkedList<Node> nextMoves = new LinkedList<Node>();
+		int acceleration_x = 1;
+		
+		// Create permutations with repititions
+		for (int i = 0; i < 3; i++) {
+			int acceleration_y = 1;
+			for (int j = 0; j < 3; j++) {
+				if (start.getMX()+start.getX()+acceleration_x == start.getX() && start.getMY()+start.getY()+acceleration_y == start.getY()) {
+					acceleration_y--;
+					continue;
+				}
+				nextMoves.add(new Node(	start.getMX()+start.getX()+acceleration_x, 	// New x coordinate
+														start.getMY()+start.getY()+acceleration_y, 	// New y coordinate
+														start.getMX()+acceleration_x, 				// New x velocity
+														start.getMY()+acceleration_y				// New y velocity
+													));
+				acceleration_y--;
+			}
+			acceleration_x--;
+		}
+		
+		return nextMoves;
+	}
+	
+	public static int[] getTrackConditions(String[][] track) {
+		
+		int startCounter = 0;
+		int finishCounter = 0;
+		
+		for (int i = 0; i < track.length; i++) {
+			for (int j = 0; j < track[i].length; j++) {
+				if (track[i][j].equals("S")) {
+					startCounter++;
+				}
+				if (track[i][j].equals("F")) {
+					finishCounter++;
+				}
+			}
+		}
+		
+		return new int[] {startCounter, finishCounter};
+	}
+	
+	public static String[][] importTrack() {
+		
+		// Read board dimensions
+		int rows = StdIn.readInt();
+		StdIn.readLine(); // Read excess line
+		int cols = StdIn.readInt();
+		StdIn.readLine(); // Read excess line
+		
+		// Instantiate game board with appropriate rows and cols
+		String[][] board = new String[rows][cols];
+		
+		// Read board content - one line at a time (memory consumption: one String object per row. Substrings refer to the original line String!)
+		for (int i = 0; i < rows; i++) {
+			String line = StdIn.readLine();
+			for (int j = 0; j < cols; j++) {
+				board[i][j] = line.substring(j, j+1);
+			}
+		}
+		return board;
+	}
+	
+	public static void printTrack(String[][] track) {
+		
+		/*
+		 * Method for printing the race track
+		 */
+		
+		for (int i = 0; i < track.length; i++) {
+			for (int j = 0; j < track[i].length; j++) {
+				System.out.printf("%2s", track[i][j]);
+			}
+			System.out.println();
+		}
+	}
+
+}
+
+class Node {
+	
+	/*
+	 * This class represents a move.
+	 */
+	private int x;
+	private int y;
+	private int momentum_x;
+	private int momentum_y;
+	
+	public Node(int x, int y, int mx, int my) {
+		this.x = x;
+		this.y = y;
+		this.momentum_x = mx;
+		this.momentum_y = my;
+	}
+	
+	public int getX() { return this.x; }
+	
+	public int getY() { return this.y; }
+	
+	public int getMX() { return this.momentum_x; }
+	
+	public int getMY() { return this.momentum_y; }
+	
+	public boolean equals(Node that) {
+		if (that == null) return false;
+		if (this == that) return true;
+		if (this.x == that.x && this.y == that.y && this.momentum_x == that.momentum_x && this.momentum_y == that.momentum_y) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public String toString() {
+		return "(" + x + ", " + y + ", " + momentum_x + ", " + momentum_y + ")";
+	}
+	
+}
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.Stack;
+
+
+public class SuperMario {
+	
+	/*
+	 * Group BJ
+	 * Niels Schrøder Pedersen & Nicklas Frederiksen
+	 * 
+	 * Assignment: Super Vector Mario!
+	 */
+	
+	public static void main(String[] args) {
+		
+		// Import the race track through StdIn of the format: r \n c \n row1 \n row2 ...
+		String[][] track = importTrack();
+		
+		printTrack(track);
+		
+		int[] conditions = getTrackConditions(track);
+		
+		// Build a directed graph whose nodes resprsent all legal posision-velocity pairs, 
+		// and whose edges represent legal moves. Add a source vertex s, and an arc 
+		// s->((i,j),(0,0)) for every point (i,j) in the starting region. Add a target 
+		// vertex t, and an arc ((i,j),(u,v))->t for every point (i,j) in the finish region 
+		// and every legal velocity (u,v). 
+		
+		/*
+		 *  Each node in the graph is represented by an int array og length 4:
+		 *  
+		 *  Node(position_x, position_y, momentum_x, momentum_y)
+		 *  
+		 *  The momentum decides the available nodes from the current node. E.g. if Mario travels from
+		 *  (x,y,a,b), without any changes, the next node will be (x+a, y+b, a, b). All other available
+		 *  nodes are determined by the acceleration changes to values a and b (+/-1). The  available
+		 *  changes to a and b are:
+		 *  ( 0, +1) (+1,  0) (+1, +1)
+		 *  ( 0, -1) ( 0, -1) (-1, -1)
+		 *  (+1, -1) ( 0,  0)
+		 */
+		
+		ArrayList<HashMap<Node, LinkedList<Node>>> graphContainer = new ArrayList<HashMap<Node,LinkedList<Node>>>();
+		
+		int minimumPath = Integer.MAX_VALUE;
+		
+		for (int i = 0; i < track.length; i++) {
+			for (int j = 0; j < track[i].length; j++) {
+				if (track[i][j].equals("S")) {
+					// Start building directed graph for this start field and do BFS after building it
+//					System.out.println("Starting field at: [" + j + ", " + i + "]");
+					HashMap<Node, LinkedList<Node>> g = graphConstructor(track, j, i);
+					graphContainer.add(g);
+					
+					System.out.println(g.toString());
+					
+					Node start = new Node(j, i, 0, 0);
+					
+					System.out.println("Start: " + start.toString());
+					
+					int localMinimumPath = BFS(g, start, track);
+					if (localMinimumPath < minimumPath) {
+						minimumPath = localMinimumPath;	
+					}
+				}
+			}
+		}
+		
+		// Perform BFS on each graph and get the smallest of the two
+		System.out.println(minimumPath);
+	}
+	
+	public static int BFS(HashMap<Node, LinkedList<Node>> graph, Node start, String[][] track) {
+		
+		/*
+		 * This methods searches for the shortest path from start to finish in any graph
+		 */
+		
+		Queue<Node> q = new LinkedList<Node>();
+		
+		HashMap<Node, Boolean> visited = new HashMap<Node, Boolean>();
+		HashMap<Node, Node> path = new HashMap<Node, Node>();
+		
+		q.add(start);
+		Node current = null;
+		while (!q.isEmpty()) {
+			current = q.poll();
+			visited.put(current, true);
+			System.out.println(graph.toString());
+			System.out.println("Current: " + current.toString());
+			System.out.println("Contains? " + graph.containsKey(current));
+			LinkedList<Node> children = graph.get(current);
+			
+			for (Node child : children) {
+				path.put(child, current);
+				
+				if (isInGoal(child, track)) {
+					Node backTrackNode = child;
+					Stack<Node> s = new Stack<Node>();
+					s.push(child);
+					while (!backTrackNode.equals(start)) {
+						backTrackNode = path.get(backTrackNode);
+						s.push(backTrackNode);
+					}
+					return s.size();
+				}
+				
+			}
+			
+		}
+		
+		return 0;
+		
+	}
+	
+	public static HashMap<Node, LinkedList<Node>> graphConstructor(String[][] track, int x, int y) {
+		
+		/*
+		 * This method creates a directed graph from the starting point x, y, using the helper method "getNextMoves".
+		 */
+		
+		HashMap<Node, LinkedList<Node>> graph = new HashMap<Node, LinkedList<Node>>();
+		HashMap<Node, Boolean> visited = new HashMap<Node, Boolean>();
+		
+		// Starting node: x, y with no mementum
+		Node start = new Node(x, y, 0, 0);
+		
+		Queue<Node> q = new LinkedList<Node>(); 
+		
+		q.add(start);
+		// Keep "growing a path" / adding the path to the queue unless it ends up in a finish, or out of bounds
+		while (!q.isEmpty()) {
+			Node current = q.poll();
+			LinkedList<Node> nextMoves = getNextMoves(current, track);
+			visited.put(current, true);
+			if (!isInGoal(current, track)) {
+//				System.out.println("Visited " + current + " and expanded " + nextMoves.toString());
+				for (Node move : nextMoves) {
+					if (!current.equals(move) && isLegalMove(move, track) && visited.get(move) == null) {
+						// Add move to queue IF it's not equal to the parent AND it's a legal move AND its not been visited before
+						q.add(move);
+						
+						// Map or update mapping from current --> move
+						if (!graph.containsKey(current)) {
+							LinkedList<Node> l = new LinkedList<Node>();
+							l.add(move);
+							graph.put(current, l);
+						} else {
+							LinkedList<Node> l = graph.get(current);
+							l.add(move);
+							graph.put(current, l);
+						}
+					}
+				}
+			}
+//			System.out.println("Queue: " + q.toString());
+		}
+		
+		return graph;
+	}
+	
+	public static boolean isInGoal(Node move, String[][] track) {
+		
+		/*
+		 * This method evaluates whether or not a move terminates on a goal node
+		 */
+		
+		if (track[move.getY()][move.getX()].equals("F")) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public static boolean isLegalMove(Node move, String[][] track) {
+		
+		/*
+		 * Evaluates the position of a given move. The move is deemed illegal if it meets any of the following conditions:
+		 * 1. The x-coordinate is less than zero - the move is out bounds
+		 * 2. The y-coordinate is less than zero - the move is out of bounds
+		 * 3. The x-coordinate is greater than the horizontal length of the track - the move is out of bounds
+		 * 4. The y-coordinate is greater than the vertical length of the track - the move is out of bounds
+		 * 5. The move has landed on a tile that contains the letter "O" - the Mario has hit an obstacle and died!
+		 */
+		
+		if (move.getX() < 0 || move.getY() < 0 || move.getX() >= track[0].length || move.getY() >= track.length || track[move.getY()][move.getX()].equals("O")) {
+			return false;
+		} else {
+			return true;
+		}
+	}
+	
+	public static LinkedList<Node> getNextMoves(Node start, String[][] track) {
+		
+		/*
+		 * This method takes any node and returns the next possible moves - including a backwards move. This will be removed when during mapping the directions.
+		 */
+		
+		LinkedList<Node> nextMoves = new LinkedList<Node>();
+		int acceleration_x = 1;
+		
+		// Create permutations with repititions
+		for (int i = 0; i < 3; i++) {
+			int acceleration_y = 1;
+			for (int j = 0; j < 3; j++) {
+				if (start.getMX()+start.getX()+acceleration_x == start.getX() && start.getMY()+start.getY()+acceleration_y == start.getY()) {
+					acceleration_y--;
+					continue;
+				}
+				nextMoves.add(new Node(	start.getMX()+start.getX()+acceleration_x, 	// New x coordinate
+														start.getMY()+start.getY()+acceleration_y, 	// New y coordinate
+														start.getMX()+acceleration_x, 				// New x velocity
+														start.getMY()+acceleration_y				// New y velocity
+													));
+				acceleration_y--;
+			}
+			acceleration_x--;
+		}
+		
+		return nextMoves;
+	}
+	
+	public static int[] getTrackConditions(String[][] track) {
+		
+		int startCounter = 0;
+		int finishCounter = 0;
+		
+		for (int i = 0; i < track.length; i++) {
+			for (int j = 0; j < track[i].length; j++) {
+				if (track[i][j].equals("S")) {
+					startCounter++;
+				}
+				if (track[i][j].equals("F")) {
+					finishCounter++;
+				}
+			}
+		}
+		
+		return new int[] {startCounter, finishCounter};
+	}
+	
+	public static String[][] importTrack() {
+		
+		// Read board dimensions
+		int rows = StdIn.readInt();
+		StdIn.readLine(); // Read excess line
+		int cols = StdIn.readInt();
+		StdIn.readLine(); // Read excess line
+		
+		// Instantiate game board with appropriate rows and cols
+		String[][] board = new String[rows][cols];
+		
+		// Read board content - one line at a time (memory consumption: one String object per row. Substrings refer to the original line String!)
+		for (int i = 0; i < rows; i++) {
+			String line = StdIn.readLine();
+			for (int j = 0; j < cols; j++) {
+				board[i][j] = line.substring(j, j+1);
+			}
+		}
+		return board;
+	}
+	
+	public static void printTrack(String[][] track) {
+		
+		/*
+		 * Method for printing the race track
+		 */
+		
+		for (int i = 0; i < track.length; i++) {
+			for (int j = 0; j < track[i].length; j++) {
+				System.out.printf("%2s", track[i][j]);
+			}
+			System.out.println();
+		}
+	}
+
+}
+
+class Node {
+	
+	/*
+	 * This class represents a move.
+	 */
+	private int x;
+	private int y;
+	private int momentum_x;
+	private int momentum_y;
+	
+	public Node(int x, int y, int mx, int my) {
+		this.x = x;
+		this.y = y;
+		this.momentum_x = mx;
+		this.momentum_y = my;
+	}
+	
+	public int getX() { return this.x; }
+	
+	public int getY() { return this.y; }
+	
+	public int getMX() { return this.momentum_x; }
+	
+	public int getMY() { return this.momentum_y; }
+	
+	public boolean equals(Node that) {
+		if (that == null) return false;
+		if (this == that) return true;
+		if (this.x == that.x && this.y == that.y && this.momentum_x == that.momentum_x && this.momentum_y == that.momentum_y) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+	public String toString() {
+		return "(" + x + ", " + y + ", " + momentum_x + ", " + momentum_y + ")";
+	}
+	
+}
+
+
